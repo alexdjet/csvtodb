@@ -1,0 +1,93 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/alexmullins/zip"
+)
+
+func main() {
+	dirPath := "../eattachtodb/data"
+
+	// сканировать директорию, выбрать табличные файлы
+	fd, err := os.Open(dirPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer fd.Close()
+
+	names, _ := fd.Readdirnames(0)
+	for _, filename := range names {
+		fmt.Printf("File %s\n", filename)
+
+		filePathStr := filepath.Join(dirPath, filename)
+		file, err := os.Open(filePathStr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		fileInfo, err := file.Stat()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if fileInfo.IsDir() {
+			continue
+		}
+
+		ext := filepath.Ext(filePathStr)
+		// fmt.Println(ext)
+
+		if ext == ".zip" {
+			archive, err := zip.OpenReader(filePathStr)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer archive.Close()
+
+			for _, file := range archive.File {
+				archivedFilePath := filepath.Join(dirPath, file.Name)
+				fmt.Printf("Archived file %s\n", archivedFilePath)
+				if file.IsEncrypted() {
+					file.SetPassword("password")
+				}
+				if file.FileInfo().IsDir() {
+					continue
+				}
+
+				rc, err := file.Open()
+				if err != nil {
+					log.Printf("Error opening file %s: %v", archivedFilePath, err)
+					continue
+				}
+				defer rc.Close()
+
+				// create dest
+				outFile, err := os.OpenFile(archivedFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+				if err != nil {
+					log.Printf("Error creating file %s: %v", archivedFilePath, err)
+					continue
+				}
+				defer outFile.Close()
+
+				_, err = io.Copy(outFile, rc)
+				if err != nil {
+					log.Printf("Error copying content for file %s: %v", file.Name, err)
+				}
+
+				fmt.Printf("Extracted: %s\n", archivedFilePath)
+
+			}
+
+			fmt.Println("Unzipping complete.")
+		}
+
+	}
+
+	// распарсить содержимое, подготовить запросы в БД
+
+}
