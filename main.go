@@ -7,11 +7,23 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alexmullins/zip"
+	"github.com/joho/godotenv"
+	"github.com/yeka/zip"
 )
 
 func main() {
-	dirPath := "../eattachtodb/data"
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error load enviroment variables in .env file: %v", err)
+	}
+
+	// or os.lookupenv
+	zipPass := os.Getenv("ZIP_PASS")
+	// dbUser := os.Getenv("DB_USER")
+	// dbPass := os.Getenv("DB_PASSWORD")
+
+	dirPath := "../eattachs/data"
 
 	// сканировать директорию, выбрать табличные файлы
 	fd, err := os.Open(dirPath)
@@ -50,21 +62,23 @@ func main() {
 			defer archive.Close()
 
 			for _, file := range archive.File {
-				archivedFilePath := filepath.Join(dirPath, file.Name)
-				fmt.Printf("Archived file %s\n", archivedFilePath)
-				if file.IsEncrypted() {
-					file.SetPassword("password")
-				}
 				if file.FileInfo().IsDir() {
 					continue
 				}
 
-				rc, err := file.Open()
+				file.SetPassword(zipPass)
+
+				archivedFilePath := filepath.Join(dirPath, file.Name)
+				fmt.Printf("Archived file %s\n", archivedFilePath)
+
+				print(file.FileInfo())
+
+				rr, err := file.Open()
 				if err != nil {
 					log.Printf("Error opening file %s: %v", archivedFilePath, err)
 					continue
 				}
-				defer rc.Close()
+				defer rr.Close()
 
 				// create dest
 				outFile, err := os.OpenFile(archivedFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
@@ -74,7 +88,7 @@ func main() {
 				}
 				defer outFile.Close()
 
-				_, err = io.Copy(outFile, rc)
+				_, err = io.Copy(outFile, rr)
 				if err != nil {
 					log.Printf("Error copying content for file %s: %v", file.Name, err)
 				}
