@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
@@ -36,8 +37,8 @@ func main() {
 	for _, filename := range names {
 		fmt.Printf("File %s\n", filename)
 
-		filePathStr := filepath.Join(dirPath, filename)
-		file, err := os.Open(filePathStr)
+		strFilePath := filepath.Join(dirPath, filename)
+		file, err := os.Open(strFilePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -51,11 +52,11 @@ func main() {
 			continue
 		}
 
-		ext := filepath.Ext(filePathStr)
+		ext := filepath.Ext(strFilePath)
 		// fmt.Println(ext)
 
 		if ext == ".zip" {
-			archive, err := zip.OpenReader(filePathStr)
+			archive, err := zip.OpenReader(strFilePath)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -98,10 +99,46 @@ func main() {
 			}
 
 			fmt.Println("Unzipping complete.")
+		} else if ext == ".csv" {
+			parseCsv(strFilePath)
 		}
 
 	}
+}
 
-	// распарсить содержимое, подготовить запросы в БД
+/**
+ * распарсить содержимое, подготовить запросы в БД
+ *
+ * @author	Unknown
+ * @since	v0.0.1
+ * @global
+ * @return	void
+ */
+func parseCsv(filePath string) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatal(err) // return
 
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+
+	// records, err := reader.ReadAll()
+	// if err != nil {
+	// 	log.Fatal(err) // return
+	// }
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		fmt.Println(record)
+	}
 }
