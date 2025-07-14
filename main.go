@@ -2,15 +2,32 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/yeka/zip"
 )
+
+type RowReport struct {
+	Operation           string
+	Date                string
+	Amount              float64
+	Fee                 float64
+	Currency            string
+	MerchantAccountID   string
+	UserAccountID       string
+	Status              string
+	Category            string
+	ClientTransactionID string
+	Description         string
+}
 
 func main() {
 
@@ -56,89 +73,122 @@ func main() {
 		// fmt.Println(ext)
 
 		if ext == ".zip" {
-			archive, err := zip.OpenReader(strFilePath)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer archive.Close()
-
-			for _, file := range archive.File {
-				if file.FileInfo().IsDir() {
-					continue
-				}
-
-				file.SetPassword(zipPass)
-
-				archivedFilePath := filepath.Join(dirPath, file.Name)
-				fmt.Printf("Archived file %s\n", archivedFilePath)
-
-				print(file.FileInfo())
-
-				rr, err := file.Open()
-				if err != nil {
-					log.Printf("Error opening file %s: %v", archivedFilePath, err)
-					continue
-				}
-				defer rr.Close()
-
-				// create dest
-				outFile, err := os.OpenFile(archivedFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-				if err != nil {
-					log.Printf("Error creating file %s: %v", archivedFilePath, err)
-					continue
-				}
-				defer outFile.Close()
-
-				_, err = io.Copy(outFile, rr)
-				if err != nil {
-					log.Printf("Error copying content for file %s: %v", file.Name, err)
-				}
-
-				fmt.Printf("Extracted: %s\n", archivedFilePath)
-
-			}
-
-			fmt.Println("Unzipping complete.")
+			unzip(zipPass, dirPath, strFilePath)
+			continue
 		} else if ext == ".csv" {
+			fmt.Printf("Is csv %v\n", strFilePath)
 			parseCsv(strFilePath)
 		}
 
 	}
 }
 
-/**
- * распарсить содержимое, подготовить запросы в БД
- *
- * @author	Unknown
- * @since	v0.0.1
- * @global
- * @return	void
- */
+func unzip(password, destDir, file string) {
+	archive, err := zip.OpenReader(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer archive.Close()
+
+	for _, file := range archive.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		file.SetPassword(password)
+
+		archivedFilePath := filepath.Join(destDir, file.Name)
+		fmt.Printf("Archived file %s\n", archivedFilePath)
+
+		print(file.FileInfo())
+
+		rr, err := file.Open()
+		if err != nil {
+			log.Printf("Error opening file %s: %v", archivedFilePath, err)
+			continue
+		}
+		defer rr.Close()
+
+		// create dest
+		outFile, err := os.OpenFile(archivedFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			log.Printf("Error creating file %s: %v", archivedFilePath, err)
+			continue
+		}
+		defer outFile.Close()
+
+		_, err = io.Copy(outFile, rr)
+		if err != nil {
+			log.Printf("Error copying content for file %s: %v", file.Name, err)
+		}
+
+		fmt.Printf("Extracted: %s\n", archivedFilePath)
+
+	}
+
+	fmt.Println("Unzipping complete.")
+}
+
 func parseCsv(filePath string) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal(err) // return
-
 	}
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	reader.LazyQuotes = true
+	reader.Comma = ';'
+	// reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = 11
 
-	// records, err := reader.ReadAll()
-	// if err != nil {
-	// 	log.Fatal(err) // return
+	// Skip header rows
+	// _, _ = reader.Read()
+	// if err != nil && err != io.EOF {
+	// 	fmt.Println("Error reading header:", err)
+	// 	return
 	// }
 
+	var rows []RowReport
+
 	for {
-		record, err := reader.Read()
+		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
+
+		if errors.Is(err, csv.ErrFieldCount) {
+			continue
+		}
+
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error: ", err)
 			return
 		}
 
-		fmt.Println(record)
+		amount, _ := strconv.ParseFloat(strings.Replace(row[2], ",", ".", 1), 64)
+		free, _ := strconv.ParseFloat(strings.Replace(row[3], ",", ".", 1), 64)
+
+		rowReport := RowReport{
+			Operation:           row[0],
+			Date:                row[1],
+			Amount:              amount,
+			Fee:                 free,
+			Currency:            row[4],
+			MerchantAccountID:   row[5],
+			UserAccountID:       row[6],
+			Status:              row[7],
+			Category:            row[8],
+			ClientTransactionID: row[9],
+			Description:         row[10],
+		}
+
+		rows = append(rows, rowReport)
 	}
+
+	// for _, r := range rows {
+	// 	fmt.Print(r)
+	// }
+
+	// err = db.Insert(rows...)
 }
