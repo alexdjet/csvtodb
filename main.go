@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/yeka/zip"
 )
@@ -31,7 +33,14 @@ type RowReport struct {
 
 func main() {
 
-	err := godotenv.Load()
+	dsn := "user:password@tcp(localhost:3306)/database_name"
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	err = godotenv.Load()
 	if err != nil {
 		log.Fatalf("Error load enviroment variables in .env file: %v", err)
 	}
@@ -77,7 +86,9 @@ func main() {
 			continue
 		} else if ext == ".csv" {
 			fmt.Printf("Is csv %v\n", strFilePath)
-			parseCsv(strFilePath)
+			rows := parseCsv(strFilePath)
+
+			sendToDb(db, rows)
 		}
 
 	}
@@ -129,7 +140,7 @@ func unzip(password, destDir, file string) {
 	fmt.Println("Unzipping complete.")
 }
 
-func parseCsv(filePath string) {
+func parseCsv(filePath string) []RowReport {
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal(err) // return
@@ -163,7 +174,7 @@ func parseCsv(filePath string) {
 
 		if err != nil {
 			fmt.Println("Error: ", err)
-			return
+			break
 		}
 
 		amount, _ := strconv.ParseFloat(strings.Replace(row[2], ",", ".", 1), 64)
@@ -186,9 +197,49 @@ func parseCsv(filePath string) {
 		rows = append(rows, rowReport)
 	}
 
-	// for _, r := range rows {
-	// 	fmt.Print(r)
-	// }
-
+	return rows
+	// добавить одним запросом
+	// обработать ошибку на уникальные столбцы
 	// err = db.Insert(rows...)
+}
+
+func sendToDb(db *sql.DB, rows []RowReport) {
+
+	for _, row := range rows {
+		id, err := insertRow(db, &row)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Вставлена запись с ID:", id)
+	}
+}
+
+func insertRow(db *sql.DB, row *RowReport) (int64, error) {
+	query := "INSERT INTO payments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	result, err := db.Exec(query,
+		row.Operation,
+		row.Date,
+		row.Amount,
+		row.Fee,
+		row.Currency,
+		row.MerchantAccountID,
+		row.UserAccountID,
+		row.Status,
+		row.Category,
+		row.ClientTransactionID,
+		row.Description)
+	if err != nil {
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+
+			if mysqlErr.Number == 1062 {
+				return 0, fmt.Errorf("duplicate entry error: %w", err)
+			} else {
+				return 0, fmt.Errorf("MySQL ошибка №%d: %s\n", mysqlErr.Number, mysqlErr.Message)
+			}
+		} else {
+			return 0, fmt.Errorf("Ошибка не MySQL:", err)
+		}
+	}
+
+	return result.LastInsertId()
 }
