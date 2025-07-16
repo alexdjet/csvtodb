@@ -12,10 +12,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/caarlos0/env"
 	"github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/yeka/zip"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
+
+type Config struct {
+	ZipPass string `env:"ZIP_PASS" envDefault:"pass"`
+	DbHost  string `env:"DB_HOST" envDefault:"localhost"`
+	DbPort  string `env:"DB_PORT" envDefault:"3306"`
+	DbUser  string `env:"DB_USER" envDefault:"user"`
+	DbPass  string `env:"DB_PASSWORD" envDefault:"password"`
+	DbName  string `env:"DB_NAME" envDefault:"dbname"`
+}
 
 type RowReport struct {
 	Operation           string
@@ -33,22 +45,24 @@ type RowReport struct {
 
 func main() {
 
-	dsn := "user:password@tcp(localhost:3306)/database_name"
+	// Загружаем .env файл в окружение
+	if err := godotenv.Load(".env"); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	cfg := Config{}
+	err := env.Parse(&cfg)
+	if err != nil {
+		log.Fatalf("Error load enviroment variables in .env file: %v", err)
+	}
+
+	dsn := fmt.Sprintf("%v:%v@tcp(%v:%v)/%v", cfg.DbUser, cfg.DbPass, cfg.DbHost, cfg.DbPort, cfg.DbName)
+	fmt.Println(dsn)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-
-	err = godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error load enviroment variables in .env file: %v", err)
-	}
-
-	// or os.lookupenv
-	zipPass := os.Getenv("ZIP_PASS")
-	// dbUser := os.Getenv("DB_USER")
-	// dbPass := os.Getenv("DB_PASSWORD")
 
 	dirPath := "../eattachs/data"
 
@@ -82,19 +96,26 @@ func main() {
 		// fmt.Println(ext)
 
 		if ext == ".zip" {
-			unzip(zipPass, dirPath, strFilePath)
-			continue
-		} else if ext == ".csv" {
+			unzip(&cfg, dirPath, strFilePath)
 			fmt.Printf("Is csv %v\n", strFilePath)
 			rows := parseCsv(strFilePath)
+			sendToDb(db, rows)
+			continue
+		}
 
+		if ext == ".csv" {
+			fmt.Printf("Is csv %v\n", strFilePath)
+			rows := parseCsv(strFilePath)
 			sendToDb(db, rows)
 		}
 
 	}
 }
 
-func unzip(password, destDir, file string) {
+func unzip(cfg *Config, destDir, file string) {
+
+	fmt.Println("PASS: ", cfg.ZipPass)
+
 	archive, err := zip.OpenReader(file)
 	if err != nil {
 		log.Fatal(err)
@@ -106,7 +127,7 @@ func unzip(password, destDir, file string) {
 			continue
 		}
 
-		file.SetPassword(password)
+		file.SetPassword(cfg.ZipPass)
 
 		archivedFilePath := filepath.Join(destDir, file.Name)
 		fmt.Printf("Archived file %s\n", archivedFilePath)
@@ -147,14 +168,17 @@ func parseCsv(filePath string) []RowReport {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
+	chReader := transform.NewReader(file, charmap.Windows1251.NewDecoder())
+
+	reader := csv.NewReader(chReader)
 	reader.LazyQuotes = true
 	reader.Comma = ';'
-	// reader.TrimLeadingSpace = true
 	reader.FieldsPerRecord = 11
 
 	// Skip header rows
-	// _, _ = reader.Read()
+	_, _ = reader.Read()
+	_, _ = reader.Read()
+
 	// if err != nil && err != io.EOF {
 	// 	fmt.Println("Error reading header:", err)
 	// 	return
@@ -206,16 +230,19 @@ func parseCsv(filePath string) []RowReport {
 func sendToDb(db *sql.DB, rows []RowReport) {
 
 	for _, row := range rows {
-		id, err := insertRow(db, &row)
+		_, err := insertRow(db, &row)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("Error:", err)
+		} else {
+			// fmt.Println("Вставлена запись с ID:", id)
+			fmt.Println("Вставлена новая запись.")
 		}
-		fmt.Println("Вставлена запись с ID:", id)
 	}
 }
 
 func insertRow(db *sql.DB, row *RowReport) (int64, error) {
 	query := "INSERT INTO payments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
 	result, err := db.Exec(query,
 		row.Operation,
 		row.Date,
