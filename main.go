@@ -27,6 +27,7 @@ type Config struct {
 	DbUser  string `env:"DB_USER" envDefault:"user"`
 	DbPass  string `env:"DB_PASSWORD" envDefault:"password"`
 	DbName  string `env:"DB_NAME" envDefault:"dbname"`
+	WorkDir string `env:"WORK_DIR" envDefault:"./data/"`
 }
 
 type RowReport struct {
@@ -64,7 +65,7 @@ func main() {
 	}
 	defer db.Close()
 
-	dirPath := "../eattachs/data"
+	dirPath := cfg.WorkDir
 
 	// сканировать директорию, выбрать табличные файлы
 	fd, err := os.Open(dirPath)
