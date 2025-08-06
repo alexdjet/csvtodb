@@ -97,10 +97,14 @@ func main() {
 		// fmt.Println(ext)
 
 		if ext == ".zip" {
-			unzip(&cfg, dirPath, strFilePath)
-			fmt.Printf("Is csv %v\n", strFilePath)
-			rows := parseCsv(strFilePath)
-			sendToDb(db, rows)
+			files := unzip(&cfg, dirPath, strFilePath)
+
+			for _, f := range files {
+				fmt.Printf("Is csv %v\n", f)
+				rows := parseCsv(f)
+				sendToDb(db, rows)
+			}
+
 			continue
 		}
 
@@ -113,15 +117,14 @@ func main() {
 	}
 }
 
-func unzip(cfg *Config, destDir, file string) {
-
-	fmt.Println("PASS: ", cfg.ZipPass)
-
+func unzip(cfg *Config, destDir, file string) []string {
 	archive, err := zip.OpenReader(file)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer archive.Close()
+
+	var filesUnzip []string
 
 	for _, file := range archive.File {
 		if file.FileInfo().IsDir() {
@@ -132,8 +135,6 @@ func unzip(cfg *Config, destDir, file string) {
 
 		archivedFilePath := filepath.Join(destDir, file.Name)
 		fmt.Printf("Archived file %s\n", archivedFilePath)
-
-		print(file.FileInfo())
 
 		rr, err := file.Open()
 		if err != nil {
@@ -155,11 +156,14 @@ func unzip(cfg *Config, destDir, file string) {
 			log.Printf("Error copying content for file %s: %v", file.Name, err)
 		}
 
-		fmt.Printf("Extracted: %s\n", archivedFilePath)
+		filesUnzip = append(filesUnzip, archivedFilePath)
 
+		fmt.Printf("Extracted: %s\n", archivedFilePath)
 	}
 
 	fmt.Println("Unzipping complete.")
+
+	return filesUnzip
 }
 
 func parseCsv(filePath string) []RowReport {
