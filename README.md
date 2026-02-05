@@ -1,11 +1,100 @@
-## About The Project
-Utility file csv (directory) in db
+## About
+Обработка CSV-отчётов из ZIP-архивов и загрузка в MySQL
 
-## Env variables example
-ZIP_PASS=1111
+    Простой Go-скрипт для автоматической обработки CSV-файлов с финансовыми операциями, упакованных в ZIP-архивы, с последующей загрузкой данных в MySQL-базу данных. Поддерживает кириллицу в кодировке Windows-1251.
+
+## 📌 Функционал
+
+- Автоматическое сканирование директории на наличие `.csv` и `.zip` файлов
+- Распаковка ZIP-архивов с паролем (из конфигурации)
+- Чтение CSV-файлов с разделителем `;` и кодировкой Windows-1251
+- Пропуск заголовков и парсинг строк в структуру `RowReport`
+- Загрузка данных в таблицу базы MySQL
+- Поддержка переменных окружения через `.env`-файл
+
+## 🛠️ Требования
+
+- Go 1.19+
+- MySQL 5.7+ / MariaDB
+
+
+## ⚙️ Настройка
+
+1. **Создайте файл `.env` в корне проекта:**
+
+```env
+ZIP_PASS=your_zip_password
 DB_HOST=localhost
 DB_PORT=3306
-DB_USER=myusername
-DB_PASSWORD=mypassword
-DB_NAME=dbname
-WORK_DIR=data
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=your_database_name
+WORK_DIR=./data/
+```
+
+2. **Создайте таблицу в MySQL:**
+
+```sql
+CREATE TABLE payments (
+    operation VARCHAR(255),
+    date DATETIME,
+    amount DECIMAL(15, 2),
+    fee DECIMAL(15, 2),
+    currency VARCHAR(10),
+    merchant_account_id VARCHAR(255),
+    user_account_id VARCHAR(255),
+    status VARCHAR(50),
+    category VARCHAR(100),
+    client_transaction_id VARCHAR(255) PRIMARY KEY,
+    description TEXT
+);
+```
+    Убедитесь, что client_transaction_id — уникальный ключ, чтобы избежать дублей.
+
+3. **Поместите CSV-файлы или ZIP-архивы в папку ./data/ (или ту, что указана в WORK_DIR).**
+
+
+## 🚀 Запуск
+```bash
+go run main.go
+```
+Или соберите бинарник:
+```bash
+go build -o processor main.go
+./processor
+```
+
+## 📂 Структура CSV
+Файл должен содержать ровно 11 колонок в следующем порядке:
+1. Operation
+2. Date
+3. Amount
+4. Fee
+5. Currency
+6. MerchantAccountID
+7. UserAccountID
+8. Status
+9. Category
+10. ClientTransactionID
+11. Description
+
+    Пример строки:
+    Пополнение;2024-04-05 14:30:00;1000,50;10,00;RUB;M12345;U67890;success;transfer;TX123456789;Перевод от друга
+
+
+## 📂 Работа с архивами
+- Архивы должны быть в формате .zip с одним паролем (указывается в ZIP_PASS)
+- Поддерживаются вложенные файлы, но обрабатываются только файлы .csv в корне архива
+- Распакованные файлы остаются в рабочей директории
+
+## 🧩 Зависимости
+Установка зависимостей:
+```bash 
+go mod tidy
+```
+
+## 📝 Примечания
+- Программа пропускает строки с неправильным количеством полей
+- Десятичные числа в CSV должны использовать запятую как разделитель (например, 1000,50 → 1000.50)
+- Ошибки дублирования (Duplicate entry) не прерывают выполнение — просто логируются
+- Рекомендуется использовать client_transaction_id как первичный ключ
